@@ -26,9 +26,8 @@ def context_recall(ground_truth: str, contexts: List[str])->float:
             rouge.compute(
                 predictions=[str(c)],
                 references=[str(ground_truth)],
-            )["rouge2"]
+            )["rouge1"]  # Меняем на rouge1
         )
-
     return np.mean(rs)
 
 
@@ -50,8 +49,8 @@ def context_precision(ground_truth: str, contexts: List[str])->float:
                 bleu.compute(
                     predictions=[str(c)],
                     references=[str(ground_truth)],
-                    max_order=2,
-                )["precisions"][1]
+                    max_order=1,
+                )["precisions"][0]
             )
         except ZeroDivisionError:
             bs.append(0)
@@ -86,7 +85,7 @@ def answer_correctness_literal(
         beta=beta,
     )["score"]
 
-    return score
+    return score/100
 
 
 def answer_correctness_neural(
@@ -168,22 +167,68 @@ class ValidatorSimple:
     def validate_rag(
         self,
         test_set: pd.DataFrame,
+        threshold_good: float = 0.8,
+        threshold_mid: float = 0.5,
     ):
         """
         param test_set: пандас датасет с нужными полями: answer, ground_truth, context, question
         """
-
         res = {}
+        good_models_count = {
+            "context_recall": 0,
+            "context_precision": 0,
+            "answer_correctness_literal": 0,
+            "answer_correctness_neural": 0,
+        }
+        mid_models_count = {
+            "context_recall": 0,
+            "context_precision": 0,
+            "answer_correctness_literal": 0,
+            "answer_correctness_neural": 0,
+        }
+
+        bad_models_count = {
+            "context_recall": 0,
+            "context_precision": 0,
+            "answer_correctness_literal": 0,
+            "answer_correctness_neural": 0,
+        }
         for _, row in tqdm(test_set.iterrows(), "score_sample"):
             gt = row.ground_truth
             answer = row.answer
-            context = row.contexts
+            context = row.context
             scores = self.score_sample(answer, gt, context)
+            
+            for metric, score_list in scores.items():
+                score = score_list[0][0] if isinstance(score_list[0], list) else score_list[0]
+                if score > threshold_mid:
+                    if score > threshold_good:
+                        good_models_count[metric] += 1
+                    else:
+                        mid_models_count[metric] += 1
+                else:
+                    bad_models_count[metric] += 1
+
             if not res:
                 res = scores
             else:
                 for k, v in scores.items():
                     res[k].extend(v)
+        
+        # Вычисляем средние значения
         for k, v in res.items():
-            res[k] = np.mean(res[k])
-        return res
+            res[k] = np.mean(v)  # Меняем для корректного вычисления среднего
+            
+        total_samples = len(test_set)
+        good_models_percentage = {
+            k: (v / total_samples) * 100 for k, v in good_models_count.items()
+        }
+        mid_models_percentage = {
+            i: (j / total_samples) * 100 for i, j in mid_models_count.items()
+        }
+        bad_models_percentage = {
+            p: (l / total_samples) * 100 for p, l in bad_models_count.items()
+        }
+
+        return res, mid_models_percentage, good_models_percentage, bad_models_percentage
+
