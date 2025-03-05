@@ -1,0 +1,5 @@
+0,1
+context_recall,0.14355223813136578
+context_precision,0.2418938841403005
+answer_correctness_literal,0.2888564636352176
+answer_correctness_neural,0.6798164196181715

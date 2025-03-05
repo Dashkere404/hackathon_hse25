@@ -3,16 +3,14 @@ import re
 from metrics import ValidatorSimple  # Ваш код метрик
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
-import pandas as pd
+from typing import List, Dict, Any
 
 # Читаем данные
-train_path = "/home/guest/Desktop/project/hackathon_hse25/prepocess_calculate/datasets/train_set.json"
-val_path = "/home/guest/Desktop/project/hackathon_hse25/prepocess_calculate/datasets/val_set.json"
-
-train_df = pd.read_json(train_path) 
+val_path = "/workspaces/hackathon_hse25/prepocess_calculate/datasets/val_set.json"
 val_df = pd.read_json(val_path)
+combined_df = val_df
+# Объединяем данные
 
-combined_df = pd.concat([train_df, val_df], ignore_index=True)
 
 # Ground truth
 def get_ground_truth(row):
@@ -62,37 +60,42 @@ processed_df["context"] = processed_df.apply(
 processed_df["answer"] = processed_df["answer"].fillna("")
 processed_df["ground_truth"] = processed_df["ground_truth"].fillna("")
 
-# Проверка
-for i in range(min(5, len(processed_df))):
-    print(f"Question: {processed_df.iloc[i]['question']}")
-    print(f"Answer: {processed_df.iloc[i]['answer']}")
-    print(f"Ground Truth: {processed_df.iloc[i]['ground_truth']}")
-    print(f"Context: {processed_df.iloc[i]['context']}")
-    print("-" * 50)
-app = FastAPI()
-class UserFilter(BaseModel):
-    user: str  # Фильтрация по пользователю
 
-@app.get("/filter/")
-async def filter_by_city(user_filter: UserFilter = Query(None)):  # Параметр по умолчанию None
-    if user_filter and user_filter.user:  # Если user_filter передан
-        # Фильтрация по городу
-        user_city = combined_df[combined_df['Кампус'] == user_filter.user]
-    else:
-        # Без фильтрации, возвращаем все данные
-        user_city = combined_df
-
-    if user_city.empty:
-        return {"message": "No data found for the user."}
-    
-    # Возвращаем отфильтрованные данные
-    return {"filtered_data": user_city[['Ответ AI', 'Ресурсы для ответа']].to_dict(orient="records")}
 
 # Валидация
 validator = ValidatorSimple(neural=True)
 results, mid_percentage, good_percentage, bad_percentage = validator.validate_rag(processed_df)
-print("Результаты валидации:")
-print(results)
-print(mid_percentage)
-print(good_percentage)
-print(bad_percentage)
+
+metrics1_dict = {
+    "хорошая": good_percentage['context_recall'],
+    "плохая": bad_percentage['context_recall'],
+    "средняя": mid_percentage['context_recall']
+}
+
+metrics2_dict = {
+    "хорошая": good_percentage['context_precision'],
+    "плохая": bad_percentage['context_precision'],
+    "средня": mid_percentage['context_precision']
+}
+
+metrics3_dict = {
+    "хорошая": good_percentage['answer_correctness_literal'],
+    "плохая": bad_percentage['answer_correctness_literal'],
+    "средняя": mid_percentage['answer_correctness_literal']
+}
+
+metrics4_dict = {
+    "хорошая": good_percentage['answer_correctness_neural'],
+    "плохая": bad_percentage['answer_correctness_neural'],
+    "средняя": mid_percentage['answer_correctness_neural']
+}
+
+results_df = pd.DataFrame(results.items())
+results_df.to_csv('results.csv', index=False, encoding='utf-8')
+metric1=pd.DataFrame(metrics1_dict.items(), columns=['Модель', 'Значение']).to_csv('metrics1.csv', index=False, encoding='utf-8')
+metric2=pd.DataFrame(metrics2_dict.items(), columns=['Модель', 'Значение']).to_csv('metrics2.csv', index=False, encoding='utf-8')
+metric3=pd.DataFrame(metrics3_dict.items(), columns=['Модель', 'Значение']).to_csv('metrics3.csv', index=False, encoding='utf-8')
+metric3=pd.DataFrame(metrics4_dict.items(), columns=['Модель', 'Значение']).to_csv('metrics4.csv', index=False, encoding='utf-8')
+
+# Сохранение объединенного DataFrame в один CSV-файл
+combined_df.to_csv('combined_results.csv', index=False, encoding='utf-8')
